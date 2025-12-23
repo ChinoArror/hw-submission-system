@@ -2,24 +2,14 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const pathname = url.pathname;
-    // 简单路由
-    try {
-      if (pathname.startsWith('/api/')) {
-        return await handleApi(request, env);
-      }
-      // 静态文件
-      if (pathname === '/' || pathname === '/index.html') {
-        return serveFile('static/index.html');
-      }
-      if (pathname.startsWith('/static/')) {
-        return serveStatic(pathname.replace('/static/', ''), env);
-      }
-      // fallback: index.html (SPA)
-      return serveFile('static/index.html');
-    } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+
+    // API 请求
+    if (url.pathname.startsWith('/api/')) {
+      return handleApi(request, env);
     }
+
+    // 静态资源（HTML / JS / CSS）
+    return env.ASSETS.fetch(request);
   }
 };
 
