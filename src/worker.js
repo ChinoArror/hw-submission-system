@@ -126,27 +126,42 @@ async function handleApi(req, env) {
   }
 
   // Subjects 列表（GET）, admin 能 add subject (POST)
-  if (p === 'subjects') {
-    if (req.method === 'GET') {
-      // return default subjects if DB empty
-      const rows = await env.DB.prepare('SELECT * FROM subjects').all();
-      if ((rows.results || []).length === 0) {
-        const defaults = getConfig(env).subjectsDefault;
-        for (const s of defaults) await env.DB.prepare('INSERT OR IGNORE INTO subjects (code,title) VALUES (?,?)').bind(s, s).run();
+  if (p === 'subjects' && req.method === 'GET') {
+  try {
+    const rows = await env.DB.prepare(
+      'SELECT * FROM subjects'
+    ).all();
+
+    // 如果表是空的，初始化 6 科
+    if (!rows.results || rows.results.length === 0) {
+      const defaults = [
+        ['chinese','语文'],
+        ['math','数学'],
+        ['english','英语'],
+        ['physics','物理'],
+        ['chemistry','化学'],
+        ['biology','生物']
+      ];
+      for (const [code, title] of defaults) {
+        await env.DB.prepare(
+          'INSERT OR IGNORE INTO subjects (code, title) VALUES (?, ?)'
+        ).bind(code, title).run();
       }
-      const res = await env.DB.prepare('SELECT * FROM subjects').all();
-      return jsonResponse({ ok: true, data: res.results || [] });
     }
-    if (req.method === 'POST') {
-      const body = await req.json();
-      const auth = authenticateBasic(body.auth || {}, env);
-      if (!auth || auth.role !== 'admin') return jsonResponse({ ok: false, message: '无权限' }, 403);
-      const { code, title } = body;
-      if (!code || !title) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
-      await env.DB.prepare('INSERT INTO subjects (code,title) VALUES (?,?)').bind(code, title).run();
-      return jsonResponse({ ok: true });
-    }
+
+    const finalRows = await env.DB.prepare(
+      'SELECT * FROM subjects'
+    ).all();
+
+    return jsonResponse({ ok: true, data: finalRows.results });
+
+  } catch (e) {
+    return jsonResponse(
+      { ok: false, message: 'subjects 查询失败', error: e.message },
+      500
+    );
   }
+}
 
   // assignments: add/read
   if (p.startsWith('assignments')) {
