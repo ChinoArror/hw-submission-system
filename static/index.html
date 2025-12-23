@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>作业上交统计</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+<header>
+  <h1>📘 作业上交统计</h1>
+  <button id="loginBtn">登录</button>
+</header>
+
+<main id="app"></main>
+
+<!-- 登录弹窗 -->
+<div id="loginModal" class="modal hidden">
+  <div class="modal-content">
+    <h3>身份登录</h3>
+    <select id="role">
+      <option value="guest">访客</option>
+      <option value="teacher">教师</option>
+      <option value="admin">管理员</option>
+    </select>
+    <input id="name" placeholder="教师姓名（仅教师）"/>
+    <input id="password" type="password" placeholder="密码"/>
+    <button onclick="login()">确认登录</button>
+  </div>
+</div>
+
+<script src="/static/icons.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
