@@ -20,31 +20,20 @@ async function login() {
       return;
     }
 
-    window.auth = data;
-    localStorage.setItem('auth', JSON.stringify(data));
+    auth = {
+      role: data.role,
+      name: data.name,
+      token: data.token
+    };
+    localStorage.setItem('auth', JSON.stringify(auth));
 
     document.getElementById('loginModal').classList.add('hidden');
     renderHome();
 
-  } catch (err) {
-    console.error(err);
-    alert('登录请求异常');
+  } catch (e) {
+    console.error(e);
+    alert('登录异常，请查看控制台');
   }
-}
-
-async function renderHome() {
-  const res = await fetch('/api/subjects');
-  const data = await res.json();
-
-  app.innerHTML = `
-    <div class="subject-grid">
-      ${data.data.map(s => `
-        <div class="card" onclick="openSubject('${s.code}')">
-          ${s.title}
-        </div>
-      `).join('')}
-    </div>
-  `;
 }
 
 async function openSubject(code) {
