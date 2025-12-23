@@ -7,7 +7,7 @@ document.getElementById('loginBtn').onclick = () => {
   loginModal.classList.toggle('hidden');
 };
 
-window.login = async function () {
+async function login() {
   const role = document.getElementById('role').value;
   const name = document.getElementById('name').value;
   const password = document.getElementById('password').value;
@@ -19,13 +19,6 @@ window.login = async function () {
       body: JSON.stringify({ role, name, password })
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('HTTP 错误：', res.status, text);
-      alert('登录失败（HTTP ' + res.status + '）');
-      return;
-    }
-
     const data = await res.json();
 
     if (!data.ok) {
@@ -33,21 +26,17 @@ window.login = async function () {
       return;
     }
 
-    auth = {
-      role: data.role,
-      name: data.name,
-      token: data.token
-    };
+    window.auth = data;
+    localStorage.setItem('auth', JSON.stringify(data));
 
-    localStorage.setItem('auth', JSON.stringify(auth));
-    loginModal.classList.add('hidden');
+    document.getElementById('loginModal').classList.add('hidden');
     renderHome();
 
   } catch (err) {
     console.error(err);
-    alert('无法连接到服务器');
+    alert('登录请求异常');
   }
-};
+}
 
 async function renderHome() {
   const res = await fetch('/api/subjects');
