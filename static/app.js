@@ -1,4 +1,4 @@
-let auth = JSON.parse(localStorage.getItem('auth')||'null');
+let auth = JSON.parse(localStorage.getItem('auth') || 'null');
 
 const app = document.getElementById('app');
 const loginModal = document.getElementById('loginModal');
@@ -7,58 +7,86 @@ document.getElementById('loginBtn').onclick = () => {
   loginModal.classList.toggle('hidden');
 };
 
-async function login() {
-  const role = roleSelect.value;
-  const body = {
-    role,
-    name: name.value,
-    password: password.value
-  };
-  const res = await fetch('/api/login',{method:'POST',body:JSON.stringify(body)});
-  const data = await res.json();
-  if(data.ok){
-    auth = body;
-    localStorage.setItem('auth',JSON.stringify(body));
+window.login = async function () {
+  const role = document.getElementById('role').value;
+  const name = document.getElementById('name').value;
+  const password = document.getElementById('password').value;
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, name, password })
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('HTTP 错误：', res.status, text);
+      alert('登录失败（HTTP ' + res.status + '）');
+      return;
+    }
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      alert(data.message || '登录失败');
+      return;
+    }
+
+    auth = {
+      role: data.role,
+      name: data.name,
+      token: data.token
+    };
+
+    localStorage.setItem('auth', JSON.stringify(auth));
     loginModal.classList.add('hidden');
     renderHome();
-  }else alert('登录失败');
-}
 
-async function renderHome(){
+  } catch (err) {
+    console.error(err);
+    alert('无法连接到服务器');
+  }
+};
+
+async function renderHome() {
   const res = await fetch('/api/subjects');
-  const {data} = await res.json();
+  const data = await res.json();
+
   app.innerHTML = `
     <div class="subject-grid">
-      ${data.map(s=>`
+      ${data.data.map(s => `
         <div class="card" onclick="openSubject('${s.code}')">
           ${s.title}
-        </div>`).join('')}
+        </div>
+      `).join('')}
     </div>
   `;
 }
 
-async function openSubject(code){
-  const date = new Date().toISOString().slice(0,10);
-  const rosterRes = await fetch('/api/roster');
-  const roster = (await rosterRes.json()).data;
+async function openSubject(code) {
+  const res = await fetch('/api/roster');
+  const data = await res.json();
 
   const groups = {};
-  roster.forEach(r=>{
-    groups[r.group_index] ||= [];
-    groups[r.group_index].push(r);
+  data.data.forEach(s => {
+    groups[s.group_index] ||= [];
+    groups[s.group_index].push(s);
   });
 
   app.innerHTML = `
-    <h2>${code}｜${date}</h2>
+    <h2>${code}</h2>
     <div class="roster">
-      ${Object.values(groups).map(g=>`
+      ${Object.values(groups).map(g => `
         <div class="group">
-          ${g.map(s=>`
+          ${g.map(s => `
             <div class="student">
               <span>${s.name}</span>
-              <span>${ICONS.missing}</span>
-            </div>`).join('')}
-        </div>`).join('')}
+              <span>❌</span>
+            </div>
+          `).join('')}
+        </div>
+      `).join('')}
     </div>
   `;
 }
