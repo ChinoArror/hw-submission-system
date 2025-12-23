@@ -31,18 +31,20 @@ async function serveFile(path) {
    Configuration & Auth
    ----------------------- */
 function getConfig(env) {
-  // 密码以明文方式设置为 env.ADMIN_PASS, env.TEACHER_CREDENTIALS (JSON), env.GUEST_PASS
-  // TEACHER_CREDENTIALS 示例: [{"name":"王老师","pass":"abc123"}, {"name":"李老师","pass":"xxx"}]
   let teachers = [];
-  try { teachers = JSON.parse(env.TEACHER_CREDENTIALS || '[]'); } catch (e) { teachers = []; }
+  try {
+    teachers = JSON.parse(env.TEACHER_CREDENTIALS || '[]');
+  } catch (e) {
+    teachers = [];
+  }
+
   return {
     adminPass: env.ADMIN_PASS || 'admin123',
-    teachers,
     guestPass: env.GUEST_PASS || 'guest123',
-    subjectsDefault: ['chinese','math','english','physics','chemistry','biology'],
-    domain: env.DOMAIN || ''
+    teachers
   };
 }
+
 function checkAdmin(auth) {
   return auth && auth.role === 'admin' && auth.password === (globalThis.__ADMIN_PASS || auth.password);
 }
