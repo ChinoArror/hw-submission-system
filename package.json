@@ -1,1 +1,16 @@
+{
+  "name": "hw-submission-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "作业上交统计系统（Cloudflare Workers + D1 + KV）",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler publish",
+    "db:init": "wrangler d1 execute hw_db --file=src/db_migrations.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.20.0"
+  }
+}
 
