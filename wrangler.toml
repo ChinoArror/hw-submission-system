@@ -3,8 +3,8 @@ main = "src/worker.js"
 compatibility_date = "2025-12-23"
 
 [vars]
-ADMIN_PASS = "change_me_admin"
-GUEST_PASS = "change_me_guest"
+ADMIN_PASS = "Mylover10"
+GUEST_PASS = "Qwerasdf"
 TEACHER_CREDENTIALS = '[{"name":"wang","pass":"teacher123"}]'
 DOMAIN = "yourdomain.com"
 
@@ -18,6 +18,6 @@ database_name = "hw-submission-sys-db"
 # KV namespace binding example
 [[kv_namespaces]]
 binding = "CONFIG_KV"
-id = "xxxxxxxxxxxx"
+id = "09bd280fef254b308f830134607699d4"
 
 # If you use Pages site or Assets, configure accordingly
