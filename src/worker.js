@@ -1,31 +1,17 @@
 // src/worker.js
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
-    // API 请求
+    // ① API 一定要最优先拦截
     if (url.pathname.startsWith('/api/')) {
       return handleApi(request, env);
     }
 
-    // 静态资源（HTML / JS / CSS）
+    // ② 其余全部交给静态资源
     return env.ASSETS.fetch(request);
   }
 };
-
-/* -----------------------
-   Helper: serve static
-   ----------------------- */
-async function serveFile(path) {
-  // In simple repo, bundle `static` into Worker asset binding via Wrangler's "site" or use Worker KV.
-  // For clarity here we'll respond with a placeholder.
-  if (path === 'static/index.html') {
-    return new Response(indexHTML, {
-      headers: { 'content-type': 'text/html; charset=utf-8' }
-    });
-  }
-  return new Response('Not found', { status: 404 });
-}
 
 /* -----------------------
    Configuration & Auth
