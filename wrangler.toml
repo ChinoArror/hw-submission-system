@@ -1,0 +1,23 @@
+name = "hw-submission-system"
+main = "src/worker.js"
+compatibility_date = "2025-12-23"
+
+[vars]
+ADMIN_PASS = "change_me_admin"
+GUEST_PASS = "change_me_guest"
+TEACHER_CREDENTIALS = '[{"name":"wang","pass":"teacher123"}]'
+DOMAIN = "yourdomain.com"
+
+[bindings]
+# D1 binding
+[[d1_databases]]
+binding = "DB"
+database_name = "hw-submission-sys-db"
+
+
+# KV namespace binding example
+[[kv_namespaces]]
+binding = "CONFIG_KV"
+id = "xxxxxxxxxxxx"
+
+# If you use Pages site or Assets, configure accordingly
