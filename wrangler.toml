@@ -13,6 +13,7 @@ DOMAIN = "yourdomain.com"
 [[d1_databases]]
 binding = "DB"
 database_name = "hw-submission-sys-db"
+database_id = "7eb65020-c78d-4ce1-b5ff-1b53ba43759c"
 
 
 # KV namespace binding example
