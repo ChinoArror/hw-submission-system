@@ -1,11 +1,5 @@
 let auth = JSON.parse(localStorage.getItem('auth') || 'null');
 
-const app = document.getElementById('app');
-const loginModal = document.getElementById('loginModal');
-
-document.getElementById('loginBtn').onclick = () => {
-  loginModal.classList.toggle('hidden');
-};
 
 async function login() {
   const role = document.getElementById('role').value;
