@@ -22,3 +22,7 @@ binding = "CONFIG_KV"
 id = "09bd280fef254b308f830134607699d4"
 
 # If you use Pages site or Assets, configure accordingly
+
+[assets]
+directory = "./static"
+binding = "ASSETS"
