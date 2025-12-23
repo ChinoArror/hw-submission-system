@@ -1,4 +1,4 @@
-let auth = JSON.parse(localStorage.getItem('auth') || 'null');
+
 
 
 async function login() {
