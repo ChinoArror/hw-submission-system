@@ -1,4 +1,17 @@
+async function renderHome() {
+  const res = await fetch('/api/subjects');
+  const data = await res.json();
 
+  app.innerHTML = `
+    <div class="subject-grid">
+      ${data.data.map(s => `
+        <div class="card" onclick="openSubject('${s.code}')">
+          ${s.title}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
 
 
 async function login() {
