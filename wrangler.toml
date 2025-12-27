@@ -5,8 +5,8 @@ compatibility_date = "2025-12-23"
 [vars]
 ADMIN_PASS = "Mylover10"
 GUEST_PASS = "Qwerasdf"
-TEACHER_CREDENTIALS = '[{"name":"wang","pass":"teacher123"}]'
-DOMAIN = "yourdomain.com"
+TEACHER_CREDENTIALS = '[{"name":"wang","pass":"1234"}]'
+DOMAIN = "hw.yukies.top"
 
 # D1 binding
 [[d1_databases]]
