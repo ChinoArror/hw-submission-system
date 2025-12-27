@@ -8,20 +8,16 @@ GUEST_PASS = "Qwerasdf"
 TEACHER_CREDENTIALS = '[{"name":"wang","pass":"teacher123"}]'
 DOMAIN = "yourdomain.com"
 
-[bindings]
 # D1 binding
 [[d1_databases]]
 binding = "DB"
 database_name = "hw-submission-sys-db"
 database_id = "7eb65020-c78d-4ce1-b5ff-1b53ba43759c"
 
-
 # KV namespace binding example
 [[kv_namespaces]]
 binding = "CONFIG_KV"
 id = "09bd280fef254b308f830134607699d4"
-
-# If you use Pages site or Assets, configure accordingly
 
 [assets]
 directory = "./static"

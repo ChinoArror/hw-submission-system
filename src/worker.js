@@ -51,7 +51,39 @@ function authenticateBasic(body, env) {
 /* -----------------------
    API Router
    ----------------------- */
+async function ensureTables(env) {
+  // 创建必要的表（若不存在）
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS roster (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    group_index INTEGER NOT NULL,
+    seat_index INTEGER NOT NULL
+  )`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL
+  )`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    date TEXT NOT NULL,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS statuses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_id INTEGER NOT NULL,
+    roster_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    note TEXT,
+    updated_by TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+}
 async function handleApi(req, env) {
+  await ensureTables(env);
   const url = new URL(req.url);
   const p = url.pathname.replace(/^\/api\//, '');
   if (p === 'login' && req.method === 'POST') {
@@ -70,7 +102,9 @@ async function handleApi(req, env) {
     // 从 D1 获取
     const db = env.DB;
     const q = group ? `SELECT * FROM roster WHERE group_index = ? ORDER BY seat_index` : `SELECT * FROM roster ORDER BY group_index, seat_index`;
-    const res = await db.prepare(q).bind(group ? Number(group) : undefined).all();
+    // 修复：当未提供 group 时不要绑定参数，否则会导致参数数量不匹配错误
+    const stmt = db.prepare(q);
+    const res = group ? await stmt.bind(Number(group)).all() : await stmt.all();
     return jsonResponse({ ok: true, data: res.results || [] });
   }
 
@@ -87,7 +121,7 @@ async function handleApi(req, env) {
       const lines = body.csv.split(/\r?\n/).filter(Boolean);
       const rows = lines.map(l => l.split(',').map(s => s.trim()));
       // insert into roster (first clear existing)
-      await env.DB.exec(`DELETE FROM roster;`);
+      await env.DB.prepare('DELETE FROM roster;').run();
       const stmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
       for (const r of rows) {
         const g = Number(r[0]); const seat = Number(r[1]); const name = r[2];
@@ -96,7 +130,7 @@ async function handleApi(req, env) {
       return jsonResponse({ ok: true, message: 'CSV 导入完成' });
     } else if (body.groups) {
       // body.groups is array of arrays: groups[0] -> group 1's names (top->down)
-      await env.DB.exec(`DELETE FROM roster;`);
+      await env.DB.prepare('DELETE FROM roster;').run();
       let insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
       for (let gi = 0; gi < body.groups.length; gi++) {
         const grp = body.groups[gi] || [];

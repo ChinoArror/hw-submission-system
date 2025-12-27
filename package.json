@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler publish",
-    "db:init": "wrangler d1 execute hw_db --file=src/db_migrations.sql"
+    "db:init": "wrangler d1 execute hw-submission-sys-db --file=src/db_migrations.sql"
   },
   "devDependencies": {
     "wrangler": "^3.20.0"
