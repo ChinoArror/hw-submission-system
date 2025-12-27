@@ -19,20 +19,78 @@ function applyHeaderByRole() {
   }
 }
 
+// 新增：退出登录按钮与逻辑
+function renderHeaderActions() {
+  const actions = document.querySelector('.header-actions');
+  // 清理已有退出按钮避免重复
+  const existingLogout = document.getElementById('logoutBtn');
+  if (existingLogout) existingLogout.remove();
+  if (auth) {
+    const btn = document.createElement('button');
+    btn.id = 'logoutBtn';
+    btn.textContent = '退出';
+    btn.addEventListener('click', () => {
+      localStorage.removeItem('auth');
+      auth = null;
+      applyHeaderByRole();
+      renderHome();
+    });
+    actions.appendChild(btn);
+  }
+}
+
 async function renderHome() {
   applyHeaderByRole();
+  renderHeaderActions();
+
   const res = await fetch('/api/subjects');
   const data = await res.json();
 
   app.innerHTML = `
     <div class="subject-grid">
       ${data.data.map(s => `
-        <div class="card" onclick="openSubject('${s.code}','${s.title}')">
+        <div class="card" onclick="navigateToSubject('${s.code}','${s.title}')">
           ${s.title}
         </div>
       `).join('')}
     </div>
   `;
+}
+
+// 新增：独立页面导航与返回
+function navigateTo(path) {
+  history.pushState({}, '', path);
+  // 统一在前端根据路径渲染
+  route();
+}
+
+function navigateToSubject(code, title) {
+  navigateTo('/' + code);
+  renderSubjectPage(code, title);
+}
+
+window.addEventListener('popstate', route);
+function route() {
+  const p = location.pathname;
+  const map = {
+    '/chinese': ['chinese','语文'],
+    '/math': ['math','数学'],
+    '/english': ['english','英语'],
+    '/physics': ['physics','物理'],
+    '/chemistry': ['chemistry','化学'],
+    '/biology': ['biology','生物'],
+    '/login': ['login','登录']
+  };
+  if (map[p]) {
+    const [code, title] = map[p];
+    if (code === 'login') {
+      document.getElementById('loginModal').classList.remove('hidden');
+      return;
+    }
+    renderSubjectPage(code, title);
+  } else {
+    renderHome();
+  }
 }
 
 async function login() {
@@ -63,6 +121,7 @@ async function login() {
 
     document.getElementById('loginModal').classList.add('hidden');
     applyHeaderByRole();
+    renderHeaderActions();
     renderHome();
 
   } catch (e) {
@@ -71,7 +130,7 @@ async function login() {
   }
 }
 
-async function openSubject(code, title) {
+async function renderSubjectPage(code, title) {
   const res = await fetch('/api/roster');
   const data = await res.json();
 
@@ -81,9 +140,13 @@ async function openSubject(code, title) {
     groups[s.group_index].push(s);
   });
 
+  // 返回按钮
+  const backBtn = `<button onclick="navigateTo('/')">返回主页</button>`;
+
   // 日期选择与新增作业控件（管理员/教师）
   const controls = `
     <div class="controls">
+      ${backBtn}
       <input type="date" id="datePicker" />
       ${auth && (auth.role==='admin' || auth.role==='teacher') ? `
         <input type="text" id="assignmentTitle" placeholder="作业名称" />
@@ -136,6 +199,8 @@ async function createAssignment(subjectCode) {
     return;
   }
   alert('作业已创建');
+  // 创建后自动刷新当前日期的作业列表
+  loadAssignments(subjectCode, document.getElementById('datePicker').value, null);
 }
 
 async function renderStatisticsEntry() {
@@ -192,9 +257,20 @@ async function loadAssignments(subjectCode, date, groups) {
     const rows = statusData.data || [];
     const statusMap = new Map();
     for (const r of rows) statusMap.set(r.roster_id, r.status);
+    // 如果外层未传 groups（例如刷新后），重新拉取 roster
+    let gmap = groups;
+    if (!gmap) {
+      const rosterRes = await fetch('/api/roster');
+      const rosterData = await rosterRes.json();
+      gmap = {};
+      rosterData.data.forEach(s => {
+        gmap[s.group_index] ||= [];
+        gmap[s.group_index].push(s);
+      });
+    }
     // 渲染每个作业的名单网格
     const grid = document.getElementById(`grid-${a.id}`);
-    grid.innerHTML = Object.entries(groups).map(([gi,g]) => `
+    grid.innerHTML = Object.entries(gmap).map(([gi,g]) => `
       <div class="group">
         <div class="group-title">第 ${gi} 组</div>
         ${g.map(s => {
@@ -216,7 +292,7 @@ async function loadAssignments(subjectCode, date, groups) {
     const statsBox = document.getElementById(`stats-${a.id}`);
     const counts = { ok:0, revise:0, missing:0, leave:0 };
     rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
-    const total = Object.values(groups).reduce((acc, g) => acc + g.length, 0);
+    const total = Object.values(gmap).reduce((acc, g) => acc + g.length, 0);
     statsBox.innerHTML = `
       <span>总人数：${total}</span>
       <span>｜ 合格：${counts.ok}</span>
@@ -248,8 +324,7 @@ async function cycleStatus(assignmentId, rosterId, curr) {
   if (!data.ok) { alert(data.message || '更新失败'); return; }
   const el = document.getElementById(`st-${assignmentId}-${rosterId}`);
   if (el) el.innerHTML = iconFor(next);
-  // 将 onclick 中的状态更新到最新（简易处理：重新设置属性）
-  if (el) el.setAttribute('onclick', `cycleStatus(${assignmentId}, ${rosterId}, '${next}')`);
 }
 
-renderHome();
+// 初始路由渲染
+route();

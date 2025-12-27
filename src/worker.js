@@ -8,6 +8,13 @@ export default {
       return handleApi(request, env);
     }
 
+    // 新增：将学科与登录等前端路由统一回退到 index.html（用于前端路由渲染）
+    const routeSet = new Set(['/chinese','/math','/english','/physics','/chemistry','/biology','/login','/home']);
+    if (routeSet.has(url.pathname)) {
+      const rewritten = new Request(new URL('/index.html', request.url), request);
+      return env.ASSETS.fetch(rewritten);
+    }
+
     // ② 其余全部交给静态资源
     return env.ASSETS.fetch(request);
   }
@@ -46,6 +53,23 @@ function authenticateBasic(body, env) {
     }
   }
   return null;
+}
+
+// 新增：支持基于 token 的认证（登录成功后前端使用 token，而不是再次提交明文密码）
+function authenticate(body, env) {
+  if (!body) return null;
+  if (body.token) {
+    try {
+      const payload = JSON.parse(atob(body.token));
+      // 基础校验：角色与姓名必须存在，且如果提供了 role/name 则与 token 内一致
+      if (!payload.role || !payload.name) return null;
+      if ((body.role && body.role !== payload.role) || (body.name && body.name !== payload.name)) return null;
+      return { role: payload.role, name: payload.name };
+    } catch (e) {
+      // token 无效则回退到明文认证
+    }
+  }
+  return authenticateBasic(body, env);
 }
 
 /* -----------------------
@@ -112,8 +136,8 @@ async function handleApi(req, env) {
   if (p === 'roster/import' && req.method === 'POST') {
     // 仅 admin 或 teacher 可导入
     const body = await parseBody(req);
-    const auth = authenticateBasic(body.auth || {}, env);
-    if (!auth || (auth.role !== 'admin' && auth.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
+    const authUser = authenticate(body.auth || {}, env);
+    if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
 
     // Accept either JSON groups or CSV raw
     if (body.csv) {
@@ -195,11 +219,11 @@ async function handleApi(req, env) {
     if (req.method === 'POST') {
       // 添加作业: body {auth:{...}, subject, date, title}
       const body = await req.json();
-      const auth = authenticateBasic(body.auth || {}, env);
-      if (!auth || (auth.role !== 'admin' && auth.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
+      const authUser = authenticate(body.auth || {}, env);
+      if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
       const { subject, date, title } = body;
       if (!subject || !date || !title) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
-      const r = await env.DB.prepare('INSERT INTO assignments (subject_code,title,date,created_by) VALUES (?,?,?,?)').bind(subject, title, date, auth.name).run();
+      const r = await env.DB.prepare('INSERT INTO assignments (subject_code,title,date,created_by) VALUES (?,?,?,?)').bind(subject, title, date, authUser.name).run();
       const id = r.lastInsertRowId;
       // 初始化 statuses 为 "missing"（默认）
       const rosterRows = await env.DB.prepare('SELECT * FROM roster').all();
@@ -222,12 +246,12 @@ async function handleApi(req, env) {
     if (req.method === 'POST') {
       // body {auth:{...}, assignment_id, roster_id, status}
       const body = await req.json();
-      const auth = authenticateBasic(body.auth || {}, env);
-      if (!auth || (auth.role !== 'admin' && auth.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
+      const authUser = authenticate(body.auth || {}, env);
+      if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
       const { assignment_id, roster_id, status, note } = body;
       if (!assignment_id || !roster_id || !status) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
       await env.DB.prepare('UPDATE statuses SET status=?,note=?,updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE assignment_id=? AND roster_id=?')
-        .bind(status, note||'', auth.name, assignment_id, roster_id).run();
+        .bind(status, note||'', authUser.name, assignment_id, roster_id).run();
       return jsonResponse({ ok: true });
     }
   }
