@@ -145,12 +145,20 @@ async function handleApi(req, env) {
     return jsonResponse({ ok: true, data: res.results || [] });
   }
 
+  if (p === 'classes' && req.method === 'GET') {
+    await ensureRosterFromSample(env);
+    const rows = await env.DB.prepare('SELECT DISTINCT class_no FROM roster ORDER BY class_no').all();
+    const list = (rows.results || []).map(r => r.class_no).filter(Boolean);
+    return jsonResponse({ ok: true, data: list.length ? list : ['01'] });
+  }
+
   // 导入 roster: 支持 JSON {groups:[ [name...], ... ]} 或 CSV 文本
   if (p === 'roster/import' && req.method === 'POST') {
     // 仅 admin 或 teacher 可导入
     const body = await parseBody(req);
     const authUser = authenticate(body.auth || {}, env);
     if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
+    const classNo = body.class_no || '01';
 
     // Accept either JSON groups or CSV raw
     if (body.csv) {
@@ -158,22 +166,36 @@ async function handleApi(req, env) {
       const lines = body.csv.split(/\r?\n/).filter(Boolean);
       const rows = lines.map(l => l.split(',').map(s => s.trim()));
       // insert into roster (first clear existing)
-      await env.DB.prepare('DELETE FROM roster;').run();
-      const stmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
+      await env.DB.prepare('DELETE FROM roster WHERE class_no = ?;').bind(classNo).run();
+      const stmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index, class_no) VALUES (?,?,?,?)');
       for (const r of rows) {
         const g = Number(r[0]); const seat = Number(r[1]); const name = r[2];
-        await stmt.bind(name, g, seat).run();
+        await stmt.bind(name, g, seat, classNo).run();
+      }
+      const assignmentsRows = await env.DB.prepare('SELECT id FROM assignments WHERE class_no = ?').bind(classNo).all();
+      const rosterRows = await env.DB.prepare('SELECT group_index, seat_index FROM roster WHERE class_no = ?').bind(classNo).all();
+      for (const a of assignmentsRows.results || []) {
+        for (const s of rosterRows.results || []) {
+          await env.DB.prepare('INSERT OR IGNORE INTO statuses_pos (assignment_id,class_no,group_index,seat_index,status) VALUES (?,?,?,?,?)').bind(a.id, classNo, s.group_index, s.seat_index, 'missing').run();
+        }
       }
       return jsonResponse({ ok: true, message: 'CSV 导入完成' });
     } else if (body.groups) {
       // body.groups is array of arrays: groups[0] -> group 1's names (top->down)
-      await env.DB.prepare('DELETE FROM roster;').run();
-      let insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
+      await env.DB.prepare('DELETE FROM roster WHERE class_no = ?;').bind(classNo).run();
+      let insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index, class_no) VALUES (?,?,?,?)');
       for (let gi = 0; gi < body.groups.length; gi++) {
         const grp = body.groups[gi] || [];
         for (let si = 0; si < grp.length; si++) {
           const name = grp[si];
-          await insertStmt.bind(name, gi+1, si+1).run();
+          await insertStmt.bind(name, gi+1, si+1, classNo).run();
+        }
+      }
+      const assignmentsRows = await env.DB.prepare('SELECT id FROM assignments WHERE class_no = ?').bind(classNo).all();
+      const rosterRows = await env.DB.prepare('SELECT group_index, seat_index FROM roster WHERE class_no = ?').bind(classNo).all();
+      for (const a of assignmentsRows.results || []) {
+        for (const s of rosterRows.results || []) {
+          await env.DB.prepare('INSERT OR IGNORE INTO statuses_pos (assignment_id,class_no,group_index,seat_index,status) VALUES (?,?,?,?,?)').bind(a.id, classNo, s.group_index, s.seat_index, 'missing').run();
         }
       }
       return jsonResponse({ ok: true, message: 'JSON roster 导入完成' });
@@ -264,7 +286,11 @@ async function handleApi(req, env) {
       // ?assignment_id=xx
       const aid = url.searchParams.get('assignment_id');
       const classNo = url.searchParams.get('class_no') || '01';
-      const rows = await env.DB.prepare('SELECT * FROM statuses_pos WHERE assignment_id = ? AND class_no = ?').bind(Number(aid), classNo).all();
+      const rows = await env.DB.prepare(`
+        SELECT sp.* FROM statuses_pos sp
+        JOIN roster r ON r.class_no = sp.class_no AND r.group_index = sp.group_index AND r.seat_index = sp.seat_index
+        WHERE sp.assignment_id = ? AND sp.class_no = ?
+      `).bind(Number(aid), classNo).all();
       return jsonResponse({ ok: true, data: rows.results || [] });
     }
     if (req.method === 'POST') {
@@ -293,7 +319,11 @@ async function handleApi(req, env) {
     const assign = (asRows.results || [])[0];
     if (!assign) return jsonResponse({ ok: false, message: '该科目该日无作业' }, 404);
     const stats = await env.DB.prepare(`
-      SELECT status, COUNT(*) as cnt FROM statuses_pos WHERE assignment_id = ? AND class_no = ? GROUP BY status
+      SELECT sp.status as status, COUNT(*) as cnt 
+      FROM statuses_pos sp 
+      JOIN roster r ON r.class_no = sp.class_no AND r.group_index = sp.group_index AND r.seat_index = sp.seat_index
+      WHERE sp.assignment_id = ? AND sp.class_no = ?
+      GROUP BY sp.status
     `).bind(assign.id, classNo).all();
     const total = (await env.DB.prepare('SELECT COUNT(*) as c FROM roster WHERE class_no = ?').bind(classNo).all()).results[0].c;
     const map = { ok:0, revise:0, missing:0, leave:0 };

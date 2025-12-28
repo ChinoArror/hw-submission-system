@@ -5,6 +5,45 @@ const loginBtn = document.getElementById('loginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const backButtonEl = document.getElementById('backBtn');
 
+function getSelectedClass() {
+  const cookie = document.cookie.split('; ').find(row => row.startsWith('selected_class='));
+  return cookie ? decodeURIComponent(cookie.split('=')[1]) : '01';
+}
+function setSelectedClass(classId) {
+  document.cookie = `selected_class=${encodeURIComponent(classId)}; Max-Age=${7*24*3600}; path=/`;
+}
+function setupClassSelect() {
+  const sel = document.getElementById('classSelect');
+  if (!sel) return;
+  fetch('/api/classes').then(r => r.json()).then(data => {
+    const classes = (data && data.data) || ['01'];
+    sel.innerHTML = classes.map(c => `<option value="${c}">${c}</option>`).join('');
+    const curr = getSelectedClass();
+    sel.value = curr;
+  }).catch(() => {
+    const curr = getSelectedClass();
+    sel.value = curr;
+  });
+  sel.onchange = () => {
+    setSelectedClass(sel.value);
+    const p = location.pathname;
+    const map = {
+      '/chinese': ['chinese','语文'],
+      '/math': ['math','数学'],
+      '/english': ['english','英语'],
+      '/physics': ['physics','物理'],
+      '/chemistry': ['chemistry','化学'],
+      '/biology': ['biology','生物']
+    };
+    if (map[p]) {
+      const [code, title] = map[p];
+      renderSubjectPage(code, title);
+    } else {
+      renderHome();
+    }
+  };
+}
+
 loginBtn.addEventListener('click', () => {
   document.getElementById('loginModal').classList.remove('hidden');
 });
@@ -45,12 +84,14 @@ async function populateHeaderNav() {
 }
 
 async function ensureRosterLoaded() {
-  await fetch('/api/roster');
+  const classNo = getSelectedClass();
+  await fetch(`/api/roster?class_no=${encodeURIComponent(classNo)}`);
 }
 
 async function renderHome() {
   applyHeaderByRole();
   if (backButtonEl) backButtonEl.classList.add('hidden');
+  setupClassSelect();
   await populateHeaderNav();
   await ensureRosterLoaded();
 
@@ -143,10 +184,10 @@ async function login() {
 
 async function renderSubjectPage(code, title) {
   if (backButtonEl) backButtonEl.classList.remove('hidden');
+  setupClassSelect();
   await populateHeaderNav();
   await ensureRosterLoaded();
 
-  // 返回按钮
   const backHtml = `<button onclick="navigateTo('/')">返回主页</button>`;
 
   // 日期选择与新增作业控件（管理员/教师）
@@ -180,7 +221,7 @@ async function createAssignment(subjectCode) {
     alert('请填写日期与作业名称');
     return;
   }
-  const body = { auth, subject: subjectCode, date, title };
+  const body = { auth, subject: subjectCode, date, title, class_no: getSelectedClass() };
   const res = await fetch('/api/assignments', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -221,7 +262,7 @@ async function runStatistics() {
   const date = document.getElementById('statDate').value;
   const subject = document.getElementById('statSubject').value;
   if (!date || !subject) { alert('请选择日期与学科'); return; }
-  const res = await fetch(`/api/statistics?date=${encodeURIComponent(date)}&subject=${encodeURIComponent(subject)}`);
+  const res = await fetch(`/api/statistics?date=${encodeURIComponent(date)}&subject=${encodeURIComponent(subject)}&class_no=${encodeURIComponent(getSelectedClass())}`);
   const data = await res.json();
   if (!data.ok) {
     document.getElementById('statResult').innerText = data.message || '统计失败';
@@ -237,25 +278,24 @@ async function runStatistics() {
 async function loadAssignments(subjectCode, date, groups) {
   const wrap = document.getElementById('assignments');
   wrap.innerHTML = '';
-  const res = await fetch(`/api/assignments?subject=${encodeURIComponent(subjectCode)}&date=${encodeURIComponent(date)}`);
+  const classNo = getSelectedClass();
+  const res = await fetch(`/api/assignments?subject=${encodeURIComponent(subjectCode)}&date=${encodeURIComponent(date)}&class_no=${encodeURIComponent(classNo)}`);
   const data = await res.json();
   if (!data.ok) { wrap.innerHTML = '<div class="card">该日暂无作业</div>'; return; }
   const items = data.data || [];
   if (items.length === 0) { wrap.innerHTML = '<div class="card">该日暂无作业</div>'; return; }
 
-  // 针对同一天的多条作业，分别渲染一个卡片
   wrap.innerHTML = items.map(a => `<div class="card" id="a-${a.id}"><h3>${a.title}</h3><div class="roster" id="grid-${a.id}"></div><div class="controls" id="stats-${a.id}"></div></div>`).join('');
 
   for (const a of items) {
-    const statusRes = await fetch(`/api/statuses?assignment_id=${a.id}`);
+    const statusRes = await fetch(`/api/statuses?assignment_id=${a.id}&class_no=${encodeURIComponent(classNo)}`);
     const statusData = await statusRes.json();
     const rows = statusData.data || [];
     const statusMap = new Map();
-    for (const r of rows) statusMap.set(r.roster_id, r.status);
-    // 如果外层未传 groups（例如刷新后），重新拉取 roster
+    for (const r of rows) statusMap.set(r.group_index + '-' + r.seat_index, r.status);
     let gmap = groups;
     if (!gmap) {
-      const rosterRes = await fetch('/api/roster');
+      const rosterRes = await fetch(`/api/roster?class_no=${encodeURIComponent(classNo)}`);
       const rosterData = await rosterRes.json();
       gmap = {};
       rosterData.data.forEach(s => {
@@ -269,14 +309,14 @@ async function loadAssignments(subjectCode, date, groups) {
       <div class="group">
         <div class="group-title">第 ${gi} 组</div>
         ${g.map(s => {
-          const st = statusMap.get(s.id) || 'missing';
+          const st = statusMap.get(s.group_index + '-' + s.seat_index) || 'missing';
           const icon = iconFor(st);
           const clickable = auth && (auth.role==='admin' || auth.role==='teacher');
-          const handler = clickable ? `onclick="cycleStatus(${a.id}, ${s.id})"` : '';
+          const handler = clickable ? `onclick="cycleStatus(${a.id}, ${s.group_index}, ${s.seat_index})"` : '';
           return `
             <div class="student">
               <span>${s.name}</span>
-              <span class="status" id="st-${a.id}-${s.id}" data-status="${st}" ${handler}>${icon}</span>
+              <span class="status" id="st-${a.id}-${s.group_index}-${s.seat_index}" data-status="${st}" ${handler}>${icon}</span>
             </div>
           `;
         }).join('')}
@@ -307,15 +347,15 @@ function nextStatus(curr) {
   const i = order.indexOf(curr);
   return order[(i+1) % order.length];
 }
-async function cycleStatus(assignmentId, rosterId) {
+async function cycleStatus(assignmentId, groupIndex, seatIndex) {
   if (!(auth && (auth.role==='admin' || auth.role==='teacher'))) return;
-  const el = document.getElementById(`st-${assignmentId}-${rosterId}`);
+  const el = document.getElementById(`st-${assignmentId}-${groupIndex}-${seatIndex}`);
   const curr = (el && el.dataset && el.dataset.status) ? el.dataset.status : 'missing';
   const next = nextStatus(curr);
   const res = await fetch('/api/statuses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ auth, assignment_id: assignmentId, roster_id: rosterId, status: next })
+    body: JSON.stringify({ auth, assignment_id: assignmentId, class_no: getSelectedClass(), group_index: groupIndex, seat_index: seatIndex, status: next })
   });
   const data = await res.json();
   if (!data.ok) { alert(data.message || '更新失败'); return; }
