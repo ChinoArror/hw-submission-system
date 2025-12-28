@@ -1,5 +1,6 @@
 // src/worker.js
-import rosterExample from "../sample_data/roster.example.json";
+import roster01 from "../sample_data/roster.example-01.json";
+import roster02 from "../sample_data/roster.example-02.json";
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -74,12 +75,12 @@ function authenticate(body, env) {
    API Router
    ----------------------- */
 async function ensureTables(env) {
-  // 创建必要的表（若不存在）
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS roster (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     group_index INTEGER NOT NULL,
-    seat_index INTEGER NOT NULL
+    seat_index INTEGER NOT NULL,
+    class_no TEXT
   )`).run();
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS subjects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +93,8 @@ async function ensureTables(env) {
     title TEXT NOT NULL,
     date TEXT NOT NULL,
     created_by TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    class_no TEXT
   )`).run();
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS statuses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +105,20 @@ async function ensureTables(env) {
     updated_by TEXT,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS statuses_pos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_id INTEGER NOT NULL,
+    class_no TEXT NOT NULL,
+    group_index INTEGER NOT NULL,
+    seat_index INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    note TEXT,
+    updated_by TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(assignment_id, class_no, group_index, seat_index)
+  )`).run();
+  try { await env.DB.prepare(`ALTER TABLE roster ADD COLUMN class_no TEXT`).run(); } catch(e) {}
+  try { await env.DB.prepare(`ALTER TABLE assignments ADD COLUMN class_no TEXT`).run(); } catch(e) {}
 }
 async function handleApi(req, env) {
   await ensureTables(env);
@@ -119,13 +135,13 @@ async function handleApi(req, env) {
 
   // 读取 roster
   if (p === 'roster' && req.method === 'GET') {
-    // 自动从 sample_data 导入（当首次部署或名单版本发生变化时）
     await ensureRosterFromSample(env);
+    const classNo = url.searchParams.get('class_no') || '01';
     const group = url.searchParams.get('group');
     const db = env.DB;
-    const q = group ? `SELECT * FROM roster WHERE group_index = ? ORDER BY seat_index` : `SELECT * FROM roster ORDER BY group_index, seat_index`;
+    const q = group ? `SELECT * FROM roster WHERE class_no = ? AND group_index = ? ORDER BY seat_index` : `SELECT * FROM roster WHERE class_no = ? ORDER BY group_index, seat_index`;
     const stmt = db.prepare(q);
-    const res = group ? await stmt.bind(Number(group)).all() : await stmt.all();
+    const res = group ? await stmt.bind(classNo, Number(group)).all() : await stmt.bind(classNo).all();
     return jsonResponse({ ok: true, data: res.results || [] });
   }
 
@@ -210,7 +226,8 @@ async function handleApi(req, env) {
       // ?subject=math&date=YYYY-MM-DD
       const subject = url.searchParams.get('subject');
       const date = url.searchParams.get('date');
-      const rows = await env.DB.prepare('SELECT * FROM assignments WHERE subject_code = ? AND date = ?').bind(subject, date).all();
+      const classNo = url.searchParams.get('class_no') || '01';
+      const rows = await env.DB.prepare('SELECT * FROM assignments WHERE subject_code = ? AND date = ? AND class_no = ?').bind(subject, date, classNo).all();
       return jsonResponse({ ok: true, data: rows.results || [] });
     }
     if (req.method === 'POST') {
@@ -219,19 +236,20 @@ async function handleApi(req, env) {
         const body = await req.json();
         const authUser = authenticate(body.auth || {}, env);
         if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
-        const { subject, date, title } = body;
+        const { subject, date, title, class_no } = body;
+        const classNo = class_no || '01';
         if (!subject || !date || !title) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
-        const r = await env.DB.prepare('INSERT INTO assignments (subject_code,title,date,created_by) VALUES (?,?,?,?)').bind(subject, title, date, authUser.name).run();
+        const r = await env.DB.prepare('INSERT INTO assignments (subject_code,title,date,created_by,class_no) VALUES (?,?,?,?,?)').bind(subject, title, date, authUser.name, classNo).run();
         let id = (r && r.meta && typeof r.meta.last_row_id !== 'undefined') ? r.meta.last_row_id : (r && (r.lastInsertRowId || r.lastInsertRowID));
         if (!id) {
           const last = await env.DB.prepare('SELECT last_insert_rowid() AS id').all();
           id = (last.results && last.results[0] && last.results[0].id) || id;
         }
         if (!id) return jsonResponse({ ok: false, message: '无法获取新作业ID' }, 500);
-        const rosterRows = await env.DB.prepare('SELECT * FROM roster').all();
+        const rosterRows = await env.DB.prepare('SELECT * FROM roster WHERE class_no = ?').bind(classNo).all();
         const rosterList = rosterRows.results || [];
         for (const s of rosterList) {
-          await env.DB.prepare('INSERT INTO statuses (assignment_id, roster_id, status) VALUES (?,?,?)').bind(id, s.id, 'missing').run();
+          await env.DB.prepare('INSERT OR IGNORE INTO statuses_pos (assignment_id,class_no,group_index,seat_index,status) VALUES (?,?,?,?,?)').bind(id, classNo, s.group_index, s.seat_index, 'missing').run();
         }
         return jsonResponse({ ok: true, id });
       } catch (e) {
@@ -245,18 +263,23 @@ async function handleApi(req, env) {
     if (req.method === 'GET') {
       // ?assignment_id=xx
       const aid = url.searchParams.get('assignment_id');
-      const rows = await env.DB.prepare('SELECT * FROM statuses WHERE assignment_id = ?').bind(Number(aid)).all();
+      const classNo = url.searchParams.get('class_no') || '01';
+      const rows = await env.DB.prepare('SELECT * FROM statuses_pos WHERE assignment_id = ? AND class_no = ?').bind(Number(aid), classNo).all();
       return jsonResponse({ ok: true, data: rows.results || [] });
     }
     if (req.method === 'POST') {
-      // body {auth:{...}, assignment_id, roster_id, status}
+      // body {auth:{...}, assignment_id, class_no, group_index, seat_index, status}
       const body = await req.json();
       const authUser = authenticate(body.auth || {}, env);
       if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
-      const { assignment_id, roster_id, status, note } = body;
-      if (!assignment_id || !roster_id || !status) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
-      await env.DB.prepare('UPDATE statuses SET status=?,note=?,updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE assignment_id=? AND roster_id=?')
-        .bind(status, note||'', authUser.name, assignment_id, roster_id).run();
+      const { assignment_id, class_no, group_index, seat_index, status, note } = body;
+      if (!assignment_id || !class_no || !group_index || !seat_index || !status) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
+      await env.DB.prepare(`
+        INSERT INTO statuses_pos (assignment_id,class_no,group_index,seat_index,status,note,updated_by,updated_at)
+        VALUES (?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(assignment_id,class_no,group_index,seat_index)
+        DO UPDATE SET status=excluded.status, note=excluded.note, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP
+      `).bind(assignment_id, class_no, group_index, seat_index, status, note||'', authUser.name).run();
       return jsonResponse({ ok: true });
     }
   }
@@ -265,14 +288,14 @@ async function handleApi(req, env) {
   if (p === 'statistics' && req.method === 'GET') {
     const subject = url.searchParams.get('subject');
     const date = url.searchParams.get('date');
-    // find assignment
-    const asRows = await env.DB.prepare('SELECT * FROM assignments WHERE subject_code = ? AND date = ?').bind(subject, date).all();
+    const classNo = url.searchParams.get('class_no') || '01';
+    const asRows = await env.DB.prepare('SELECT * FROM assignments WHERE subject_code = ? AND date = ? AND class_no = ?').bind(subject, date, classNo).all();
     const assign = (asRows.results || [])[0];
     if (!assign) return jsonResponse({ ok: false, message: '该科目该日无作业' }, 404);
     const stats = await env.DB.prepare(`
-      SELECT status, COUNT(*) as cnt FROM statuses WHERE assignment_id = ? GROUP BY status
-    `).bind(assign.id).all();
-    const total = (await env.DB.prepare('SELECT COUNT(*) as c FROM roster').all()).results[0].c;
+      SELECT status, COUNT(*) as cnt FROM statuses_pos WHERE assignment_id = ? AND class_no = ? GROUP BY status
+    `).bind(assign.id, classNo).all();
+    const total = (await env.DB.prepare('SELECT COUNT(*) as c FROM roster WHERE class_no = ?').bind(classNo).all()).results[0].c;
     const map = { ok:0, revise:0, missing:0, leave:0 };
     for (const r of stats.results || []) map[r.status] = r.cnt;
     return jsonResponse({ ok: true, total, map });
@@ -287,35 +310,33 @@ async function handleApi(req, env) {
 async function ensureRosterFromSample(env) {
   const autoReset = (env.RESET_ROSTER_ON_DEPLOY || 'true') !== 'false';
   if (!autoReset) return;
-  const groups = (rosterExample && rosterExample.groups) || [];
-  if (!Array.isArray(groups) || groups.length === 0) return;
-  const versionString = JSON.stringify(groups);
-  const storedVersion = await env.CONFIG_KV.get('ROSTER_VERSION_STRING');
-  if (storedVersion === versionString) {
-    // 版本未变更，若数据库已有数据则跳过
-    const c = await env.DB.prepare('SELECT COUNT(*) as c FROM roster').all();
-    if ((c.results?.[0]?.c || 0) > 0) return;
-    // 若数据库为空但 KV 已有版本记录，仍执行一次导入
-  }
-  await env.DB.prepare('DELETE FROM roster;').run();
-  const insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
-  for (let gi = 0; gi < groups.length; gi++) {
-    const grp = groups[gi] || [];
-    for (let si = 0; si < grp.length; si++) {
-      const name = grp[si];
-      await insertStmt.bind(name, gi + 1, si + 1).run();
+  const datasets = [];
+  if (roster01 && Array.isArray(roster01.groups)) datasets.push({ no: '01', groups: roster01.groups });
+  if (roster02 && Array.isArray(roster02.groups)) datasets.push({ no: '02', groups: roster02.groups });
+  for (const ds of datasets) {
+    const versionString = JSON.stringify(ds.groups);
+    const storedVersion = await env.CONFIG_KV.get('ROSTER_VERSION_STRING:' + ds.no);
+    const countRow = await env.DB.prepare('SELECT COUNT(*) as c FROM roster WHERE class_no = ?').bind(ds.no).all();
+    const existingCount = (countRow.results && countRow.results[0] && countRow.results[0].c) || 0;
+    if (storedVersion === versionString && existingCount > 0) continue;
+    await env.DB.prepare('DELETE FROM roster WHERE class_no = ?').bind(ds.no).run();
+    const insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index, class_no) VALUES (?,?,?,?)');
+    for (let gi = 0; gi < ds.groups.length; gi++) {
+      const grp = ds.groups[gi] || [];
+      for (let si = 0; si < grp.length; si++) {
+        const name = grp[si];
+        await insertStmt.bind(name, gi + 1, si + 1, ds.no).run();
+      }
     }
-  }
-  // 重建所有已存在作业的状态记录（默认 missing）
-  const rosterRows = await env.DB.prepare('SELECT id FROM roster ORDER BY group_index, seat_index').all();
-  const assignmentsRows = await env.DB.prepare('SELECT id FROM assignments').all();
-  await env.DB.prepare('DELETE FROM statuses').run();
-  for (const a of assignmentsRows.results || []) {
-    for (const s of rosterRows.results || []) {
-      await env.DB.prepare('INSERT INTO statuses (assignment_id, roster_id, status) VALUES (?,?,?)').bind(a.id, s.id, 'missing').run();
+    const assignmentsRows = await env.DB.prepare('SELECT id FROM assignments WHERE class_no = ?').bind(ds.no).all();
+    const rosterRows = await env.DB.prepare('SELECT group_index, seat_index FROM roster WHERE class_no = ?').bind(ds.no).all();
+    for (const a of assignmentsRows.results || []) {
+      for (const s of rosterRows.results || []) {
+        await env.DB.prepare('INSERT OR IGNORE INTO statuses_pos (assignment_id,class_no,group_index,seat_index,status) VALUES (?,?,?,?,?)').bind(a.id, ds.no, s.group_index, s.seat_index, 'missing').run();
+      }
     }
+    await env.CONFIG_KV.put('ROSTER_VERSION_STRING:' + ds.no, versionString);
   }
-  await env.CONFIG_KV.put('ROSTER_VERSION_STRING', versionString);
 }
 
 function jsonResponse(obj, status=200) {
