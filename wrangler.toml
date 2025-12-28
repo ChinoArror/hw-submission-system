@@ -7,6 +7,7 @@ ADMIN_PASS = "Mylover10"
 GUEST_PASS = "Qwerasdf"
 TEACHER_CREDENTIALS = '[{"name":"wang","pass":"1234"}]'
 DOMAIN = "hw.yukies.top"
+RESET_ROSTER_ON_DEPLOY = "true"
 
 # D1 binding
 [[d1_databases]]

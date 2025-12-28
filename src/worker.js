@@ -1,4 +1,5 @@
 // src/worker.js
+import rosterExample from "../sample_data/roster.example.json";
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -118,31 +119,13 @@ async function handleApi(req, env) {
 
   // 读取 roster
   if (p === 'roster' && req.method === 'GET') {
-    // 支持按组筛选 ?group=1
+    // 自动从 sample_data 导入（当首次部署或名单版本发生变化时）
+    await ensureRosterFromSample(env);
     const group = url.searchParams.get('group');
-    // 从 D1 获取
     const db = env.DB;
     const q = group ? `SELECT * FROM roster WHERE group_index = ? ORDER BY seat_index` : `SELECT * FROM roster ORDER BY group_index, seat_index`;
-    // 修复：当未提供 group 时不要绑定参数，否则会导致参数数量不匹配错误
     const stmt = db.prepare(q);
-    let res = group ? await stmt.bind(Number(group)).all() : await stmt.all();
-    if (!res.results || res.results.length === 0) {
-      try {
-        const kvData = await env.CONFIG_KV.get('roster', 'json');
-        if (kvData && kvData.groups && Array.isArray(kvData.groups)) {
-          await env.DB.prepare('DELETE FROM roster;').run();
-          let insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
-          for (let gi = 0; gi < kvData.groups.length; gi++) {
-            const grp = kvData.groups[gi] || [];
-            for (let si = 0; si < grp.length; si++) {
-              const name = grp[si];
-              await insertStmt.bind(name, gi+1, si+1).run();
-            }
-          }
-          res = group ? await db.prepare(q).bind(Number(group)).all() : await db.prepare(q).all();
-        }
-      } catch (e) {}
-    }
+    const res = group ? await stmt.bind(Number(group)).all() : await stmt.all();
     return jsonResponse({ ok: true, data: res.results || [] });
   }
 
@@ -291,8 +274,42 @@ async function handleApi(req, env) {
 }
 
 /* -----------------------
- Utility
+  Utility
  ----------------------- */
+async function ensureRosterFromSample(env) {
+  const autoReset = (env.RESET_ROSTER_ON_DEPLOY || 'true') !== 'false';
+  if (!autoReset) return;
+  const groups = (rosterExample && rosterExample.groups) || [];
+  if (!Array.isArray(groups) || groups.length === 0) return;
+  const versionString = JSON.stringify(groups);
+  const storedVersion = await env.CONFIG_KV.get('ROSTER_VERSION_STRING');
+  if (storedVersion === versionString) {
+    // 版本未变更，若数据库已有数据则跳过
+    const c = await env.DB.prepare('SELECT COUNT(*) as c FROM roster').all();
+    if ((c.results?.[0]?.c || 0) > 0) return;
+    // 若数据库为空但 KV 已有版本记录，仍执行一次导入
+  }
+  await env.DB.prepare('DELETE FROM roster;').run();
+  const insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
+  for (let gi = 0; gi < groups.length; gi++) {
+    const grp = groups[gi] || [];
+    for (let si = 0; si < grp.length; si++) {
+      const name = grp[si];
+      await insertStmt.bind(name, gi + 1, si + 1).run();
+    }
+  }
+  // 重建所有已存在作业的状态记录（默认 missing）
+  const rosterRows = await env.DB.prepare('SELECT id FROM roster ORDER BY group_index, seat_index').all();
+  const assignmentsRows = await env.DB.prepare('SELECT id FROM assignments').all();
+  await env.DB.prepare('DELETE FROM statuses').run();
+  for (const a of assignmentsRows.results || []) {
+    for (const s of rosterRows.results || []) {
+      await env.DB.prepare('INSERT INTO statuses (assignment_id, roster_id, status) VALUES (?,?,?)').bind(a.id, s.id, 'missing').run();
+    }
+  }
+  await env.CONFIG_KV.put('ROSTER_VERSION_STRING', versionString);
+}
+
 function jsonResponse(obj, status=200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json;charset=utf-8' } });
 }

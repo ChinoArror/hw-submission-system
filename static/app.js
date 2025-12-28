@@ -1,5 +1,4 @@
 let auth = JSON.parse(localStorage.getItem('auth') || 'null');
-const SAMPLE_ROSTER = {"groups":[["毛睿辰","黄溢安","霍子源","李昊阳","李卓洋","廉子衿","刘子瑜","孙逸凡","杨梓宸","陈佳鹏"],["吴佳航","程子瑞","葛一博","王柳坤","邢铁超","张哲宁","仲梓文","周照凯","王府浩天","申家赫"],["赵世杰","李昕童","任浩宇","王经纶","王天雅","翁余宸","周子皓","邓亚男","刁芬新"],["谢佳宫","李和霖","李厚浩","柳清源","牛子辰","宋景行","王启达","周致皓","陈泽翔"],["杨栩为","樊宇彬","范奕轩","冯雨鑫","李俊鹏","吕冠节","马心妍","惠浩东","张昱轩"],["白劲博","李卓航","乔振轩","王昊岩","王煜晨","吴书宇","徐睿阳","杨泽雨","童柯铭"]]};
 const app = document.getElementById('app');
 const statsBtn = document.getElementById('statsBtn');
 const loginBtn = document.getElementById('loginBtn');
@@ -24,7 +23,7 @@ if (logoutBtn) {
 
 function applyHeaderByRole() {
   const role = auth?.role;
-  if (role === 'admin' || role === 'teacher') {
+  if (auth) {
     statsBtn.classList.remove('hidden');
   } else {
     statsBtn.classList.add('hidden');
@@ -46,15 +45,7 @@ async function populateHeaderNav() {
 }
 
 async function ensureRosterLoaded() {
-  const res = await fetch('/api/roster');
-  const data = await res.json();
-  if ((data.data || []).length === 0 && auth && (auth.role === 'admin' || auth.role === 'teacher')) {
-    await fetch('/api/roster/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auth, groups: SAMPLE_ROSTER.groups })
-    });
-  }
+  await fetch('/api/roster');
 }
 
 async function renderHome() {
@@ -154,14 +145,6 @@ async function renderSubjectPage(code, title) {
   if (backBtn) backBtn.classList.remove('hidden');
   await populateHeaderNav();
   await ensureRosterLoaded();
-  const res = await fetch('/api/roster');
-  const data = await res.json();
-
-  const groups = {};
-  data.data.forEach(s => {
-    groups[s.group_index] ||= [];
-    groups[s.group_index].push(s);
-  });
 
   // 返回按钮
   const backBtn = `<button onclick="navigateTo('/')">返回主页</button>`;
@@ -182,25 +165,12 @@ async function renderSubjectPage(code, title) {
     <h2>${title}（${code}）</h2>
     ${controls}
     <div id="assignments"></div>
-    <div class="roster">
-      ${Object.entries(groups).map(([gi,g]) => `
-        <div class="group">
-          <div class="group-title">第 ${gi} 组</div>
-          ${g.map(s => `
-            <div class="student">
-              <span>${s.name}</span>
-              <span class="status" id="status-${s.id}">❌</span>
-            </div>
-          `).join('')}
-        </div>
-      `).join('')}
-    </div>
   `;
   const today = new Date().toISOString().slice(0,10);
   const datePicker = document.getElementById('datePicker');
   datePicker.value = today;
-  datePicker.addEventListener('change', () => loadAssignments(code, datePicker.value, groups));
-  loadAssignments(code, today, groups);
+  datePicker.addEventListener('change', () => loadAssignments(code, datePicker.value, null));
+  loadAssignments(code, today, null);
 }
 
 async function createAssignment(subjectCode) {
