@@ -1,7 +1,10 @@
 let auth = JSON.parse(localStorage.getItem('auth') || 'null');
+const SAMPLE_ROSTER = {"groups":[["毛睿辰","黄溢安","霍子源","李昊阳","李卓洋","廉子衿","刘子瑜","孙逸凡","杨梓宸","陈佳鹏"],["吴佳航","程子瑞","葛一博","王柳坤","邢铁超","张哲宁","仲梓文","周照凯","王府浩天","申家赫"],["赵世杰","李昕童","任浩宇","王经纶","王天雅","翁余宸","周子皓","邓亚男","刁芬新"],["谢佳宫","李和霖","李厚浩","柳清源","牛子辰","宋景行","王启达","周致皓","陈泽翔"],["杨栩为","樊宇彬","范奕轩","冯雨鑫","李俊鹏","吕冠节","马心妍","惠浩东","张昱轩"],["白劲博","李卓航","乔振轩","王昊岩","王煜晨","吴书宇","徐睿阳","杨泽雨","童柯铭"]]};
 const app = document.getElementById('app');
 const statsBtn = document.getElementById('statsBtn');
 const loginBtn = document.getElementById('loginBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+const backBtn = document.getElementById('backBtn');
 
 loginBtn.addEventListener('click', () => {
   document.getElementById('loginModal').classList.remove('hidden');
@@ -9,6 +12,15 @@ loginBtn.addEventListener('click', () => {
 statsBtn.addEventListener('click', () => {
   renderStatisticsEntry();
 });
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('auth');
+    document.cookie = 'auth=; Max-Age=0; path=/';
+    auth = null;
+    applyHeaderByRole();
+    renderHome();
+  });
+}
 
 function applyHeaderByRole() {
   const role = auth?.role;
@@ -17,31 +29,39 @@ function applyHeaderByRole() {
   } else {
     statsBtn.classList.add('hidden');
   }
+  if (auth) {
+    loginBtn.classList.add('hidden');
+    if (logoutBtn) logoutBtn.classList.remove('hidden');
+  } else {
+    loginBtn.classList.remove('hidden');
+    if (logoutBtn) logoutBtn.classList.add('hidden');
+  }
 }
 
-// 新增：退出登录按钮与逻辑
-function renderHeaderActions() {
-  const actions = document.querySelector('.header-actions');
-  // 清理已有退出按钮避免重复
-  const existingLogout = document.getElementById('logoutBtn');
-  if (existingLogout) existingLogout.remove();
-  if (auth) {
-    const btn = document.createElement('button');
-    btn.id = 'logoutBtn';
-    btn.textContent = '退出';
-    btn.addEventListener('click', () => {
-      localStorage.removeItem('auth');
-      auth = null;
-      applyHeaderByRole();
-      renderHome();
+async function populateHeaderNav() {
+  const nav = document.getElementById('subjectNav');
+  const res = await fetch('/api/subjects');
+  const data = await res.json();
+  nav.innerHTML = data.data.map(s => `<a href="/${s.code}" onclick="event.preventDefault();navigateToSubject('${s.code}','${s.title}')">${s.title}</a>`).join('');
+}
+
+async function ensureRosterLoaded() {
+  const res = await fetch('/api/roster');
+  const data = await res.json();
+  if ((data.data || []).length === 0 && auth && (auth.role === 'admin' || auth.role === 'teacher')) {
+    await fetch('/api/roster/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auth, groups: SAMPLE_ROSTER.groups })
     });
-    actions.appendChild(btn);
   }
 }
 
 async function renderHome() {
   applyHeaderByRole();
-  renderHeaderActions();
+  if (backBtn) backBtn.classList.add('hidden');
+  await populateHeaderNav();
+  await ensureRosterLoaded();
 
   const res = await fetch('/api/subjects');
   const data = await res.json();
@@ -118,10 +138,10 @@ async function login() {
       token: data.token
     };
     localStorage.setItem('auth', JSON.stringify(auth));
+    document.cookie = `auth=${encodeURIComponent(JSON.stringify(auth))}; Max-Age=${7*24*3600}; path=/`;
 
     document.getElementById('loginModal').classList.add('hidden');
     applyHeaderByRole();
-    renderHeaderActions();
     renderHome();
 
   } catch (e) {
@@ -131,6 +151,9 @@ async function login() {
 }
 
 async function renderSubjectPage(code, title) {
+  if (backBtn) backBtn.classList.remove('hidden');
+  await populateHeaderNav();
+  await ensureRosterLoaded();
   const res = await fetch('/api/roster');
   const data = await res.json();
 

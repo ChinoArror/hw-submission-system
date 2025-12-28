@@ -61,12 +61,9 @@ function authenticate(body, env) {
   if (body.token) {
     try {
       const payload = JSON.parse(atob(body.token));
-      // 基础校验：角色与姓名必须存在，且如果提供了 role/name 则与 token 内一致
       if (!payload.role || !payload.name) return null;
-      if ((body.role && body.role !== payload.role) || (body.name && body.name !== payload.name)) return null;
       return { role: payload.role, name: payload.name };
     } catch (e) {
-      // token 无效则回退到明文认证
     }
   }
   return authenticateBasic(body, env);
@@ -128,7 +125,24 @@ async function handleApi(req, env) {
     const q = group ? `SELECT * FROM roster WHERE group_index = ? ORDER BY seat_index` : `SELECT * FROM roster ORDER BY group_index, seat_index`;
     // 修复：当未提供 group 时不要绑定参数，否则会导致参数数量不匹配错误
     const stmt = db.prepare(q);
-    const res = group ? await stmt.bind(Number(group)).all() : await stmt.all();
+    let res = group ? await stmt.bind(Number(group)).all() : await stmt.all();
+    if (!res.results || res.results.length === 0) {
+      try {
+        const kvData = await env.CONFIG_KV.get('roster', 'json');
+        if (kvData && kvData.groups && Array.isArray(kvData.groups)) {
+          await env.DB.prepare('DELETE FROM roster;').run();
+          let insertStmt = await env.DB.prepare('INSERT INTO roster (name, group_index, seat_index) VALUES (?,?,?)');
+          for (let gi = 0; gi < kvData.groups.length; gi++) {
+            const grp = kvData.groups[gi] || [];
+            for (let si = 0; si < grp.length; si++) {
+              const name = grp[si];
+              await insertStmt.bind(name, gi+1, si+1).run();
+            }
+          }
+          res = group ? await db.prepare(q).bind(Number(group)).all() : await db.prepare(q).all();
+        }
+      } catch (e) {}
+    }
     return jsonResponse({ ok: true, data: res.results || [] });
   }
 
@@ -309,3 +323,4 @@ const indexHTML = `
 </body>
 </html>
 `;
+
