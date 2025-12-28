@@ -3,7 +3,7 @@ const app = document.getElementById('app');
 const statsBtn = document.getElementById('statsBtn');
 const loginBtn = document.getElementById('loginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
-const backBtn = document.getElementById('backBtn');
+const backButtonEl = document.getElementById('backBtn');
 
 loginBtn.addEventListener('click', () => {
   document.getElementById('loginModal').classList.remove('hidden');
@@ -50,7 +50,7 @@ async function ensureRosterLoaded() {
 
 async function renderHome() {
   applyHeaderByRole();
-  if (backBtn) backBtn.classList.add('hidden');
+  if (backButtonEl) backButtonEl.classList.add('hidden');
   await populateHeaderNav();
   await ensureRosterLoaded();
 
@@ -142,17 +142,17 @@ async function login() {
 }
 
 async function renderSubjectPage(code, title) {
-  if (backBtn) backBtn.classList.remove('hidden');
+  if (backButtonEl) backButtonEl.classList.remove('hidden');
   await populateHeaderNav();
   await ensureRosterLoaded();
 
   // 返回按钮
-  const backBtn = `<button onclick="navigateTo('/')">返回主页</button>`;
+  const backHtml = `<button onclick="navigateTo('/')">返回主页</button>`;
 
   // 日期选择与新增作业控件（管理员/教师）
   const controls = `
     <div class="controls">
-      ${backBtn}
+      ${backHtml}
       <input type="date" id="datePicker" />
       ${auth && (auth.role==='admin' || auth.role==='teacher') ? `
         <input type="text" id="assignmentTitle" placeholder="作业名称" />
