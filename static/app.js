@@ -186,11 +186,13 @@ async function createAssignment(subjectCode) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  const data = await res.json();
-  if (!data.ok) {
-    alert(data.message || '添加作业失败');
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch (e) {
+    alert('添加作业失败：' + text.slice(0, 200));
     return;
   }
+  if (!data.ok) { alert((data.error && (data.message + '：' + data.error)) || data.message || '添加作业失败'); return; }
   alert('作业已创建');
   // 创建后自动刷新当前日期的作业列表
   loadAssignments(subjectCode, document.getElementById('datePicker').value, null);

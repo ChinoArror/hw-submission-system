@@ -215,20 +215,28 @@ async function handleApi(req, env) {
     }
     if (req.method === 'POST') {
       // 添加作业: body {auth:{...}, subject, date, title}
-      const body = await req.json();
-      const authUser = authenticate(body.auth || {}, env);
-      if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
-      const { subject, date, title } = body;
-      if (!subject || !date || !title) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
-      const r = await env.DB.prepare('INSERT INTO assignments (subject_code,title,date,created_by) VALUES (?,?,?,?)').bind(subject, title, date, authUser.name).run();
-      const id = r.lastInsertRowId;
-      // 初始化 statuses 为 "missing"（默认）
-      const rosterRows = await env.DB.prepare('SELECT * FROM roster').all();
-      const rosterList = rosterRows.results || [];
-      for (const s of rosterList) {
-        await env.DB.prepare('INSERT INTO statuses (assignment_id, roster_id, status) VALUES (?,?,?)').bind(id, s.id, 'missing').run();
+      try {
+        const body = await req.json();
+        const authUser = authenticate(body.auth || {}, env);
+        if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
+        const { subject, date, title } = body;
+        if (!subject || !date || !title) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
+        const r = await env.DB.prepare('INSERT INTO assignments (subject_code,title,date,created_by) VALUES (?,?,?,?)').bind(subject, title, date, authUser.name).run();
+        let id = (r && r.meta && typeof r.meta.last_row_id !== 'undefined') ? r.meta.last_row_id : (r && (r.lastInsertRowId || r.lastInsertRowID));
+        if (!id) {
+          const last = await env.DB.prepare('SELECT last_insert_rowid() AS id').all();
+          id = (last.results && last.results[0] && last.results[0].id) || id;
+        }
+        if (!id) return jsonResponse({ ok: false, message: '无法获取新作业ID' }, 500);
+        const rosterRows = await env.DB.prepare('SELECT * FROM roster').all();
+        const rosterList = rosterRows.results || [];
+        for (const s of rosterList) {
+          await env.DB.prepare('INSERT INTO statuses (assignment_id, roster_id, status) VALUES (?,?,?)').bind(id, s.id, 'missing').run();
+        }
+        return jsonResponse({ ok: true, id });
+      } catch (e) {
+        return jsonResponse({ ok: false, message: '添加作业失败', error: e.message }, 500);
       }
-      return jsonResponse({ ok: true, id });
     }
   }
 
