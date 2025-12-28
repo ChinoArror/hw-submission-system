@@ -272,11 +272,11 @@ async function loadAssignments(subjectCode, date, groups) {
           const st = statusMap.get(s.id) || 'missing';
           const icon = iconFor(st);
           const clickable = auth && (auth.role==='admin' || auth.role==='teacher');
-          const handler = clickable ? `onclick="cycleStatus(${a.id}, ${s.id}, '${st}')"` : '';
+          const handler = clickable ? `onclick="cycleStatus(${a.id}, ${s.id})"` : '';
           return `
             <div class="student">
               <span>${s.name}</span>
-              <span class="status" id="st-${a.id}-${s.id}" ${handler}>${icon}</span>
+              <span class="status" id="st-${a.id}-${s.id}" data-status="${st}" ${handler}>${icon}</span>
             </div>
           `;
         }).join('')}
@@ -307,8 +307,10 @@ function nextStatus(curr) {
   const i = order.indexOf(curr);
   return order[(i+1) % order.length];
 }
-async function cycleStatus(assignmentId, rosterId, curr) {
+async function cycleStatus(assignmentId, rosterId) {
   if (!(auth && (auth.role==='admin' || auth.role==='teacher'))) return;
+  const el = document.getElementById(`st-${assignmentId}-${rosterId}`);
+  const curr = (el && el.dataset && el.dataset.status) ? el.dataset.status : 'missing';
   const next = nextStatus(curr);
   const res = await fetch('/api/statuses', {
     method: 'POST',
@@ -317,8 +319,10 @@ async function cycleStatus(assignmentId, rosterId, curr) {
   });
   const data = await res.json();
   if (!data.ok) { alert(data.message || '更新失败'); return; }
-  const el = document.getElementById(`st-${assignmentId}-${rosterId}`);
-  if (el) el.innerHTML = iconFor(next);
+  if (el) {
+    el.dataset.status = next;
+    el.innerHTML = iconFor(next);
+  }
 }
 
 // 初始路由渲染
