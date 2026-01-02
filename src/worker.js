@@ -280,6 +280,32 @@ async function handleApi(req, env) {
     }
   }
 
+  if (p === 'statuses/bulk_ok' && req.method === 'POST') {
+    const body = await req.json();
+    const authUser = authenticate(body.auth || {}, env);
+    if (!authUser || (authUser.role !== 'admin' && authUser.role !== 'teacher')) return jsonResponse({ ok: false, message: '无权限' }, 403);
+    const { assignment_id, class_no } = body;
+    if (!assignment_id || !class_no) return jsonResponse({ ok: false, message: '缺少参数' }, 400);
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO statuses_pos (assignment_id,class_no,group_index,seat_index,status)
+      SELECT ?, r.class_no, r.group_index, r.seat_index, ?
+      FROM roster r
+      WHERE r.class_no = ?
+    `).bind(assignment_id, 'missing', class_no).run();
+    await env.DB.prepare(`
+      UPDATE statuses_pos
+      SET status = 'ok', updated_by = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE assignment_id = ? AND class_no = ?
+      AND EXISTS (
+        SELECT 1 FROM roster r
+        WHERE r.class_no = statuses_pos.class_no
+        AND r.group_index = statuses_pos.group_index
+        AND r.seat_index = statuses_pos.seat_index
+      )
+    `).bind(authUser.name, assignment_id, class_no).run();
+    return jsonResponse({ ok: true });
+  }
+
   // statuses update / get
   if (p.startsWith('statuses')) {
     if (req.method === 'GET') {

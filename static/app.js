@@ -4,6 +4,8 @@ const statsBtn = document.getElementById('statsBtn');
 const loginBtn = document.getElementById('loginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const backButtonEl = document.getElementById('backBtn');
+let currentSubjectCode = null;
+const assignmentRuntime = {};
 
 function getSelectedClass() {
   const cookie = document.cookie.split('; ').find(row => row.startsWith('selected_class='));
@@ -183,6 +185,7 @@ async function login() {
 }
 
 async function renderSubjectPage(code, title) {
+  currentSubjectCode = code;
   if (backButtonEl) backButtonEl.classList.remove('hidden');
   setupClassSelect();
   await populateHeaderNav();
@@ -303,6 +306,7 @@ async function loadAssignments(subjectCode, date, groups) {
         gmap[s.group_index].push(s);
       });
     }
+    const editable = auth && (auth.role==='admin' || auth.role==='teacher');
     // 渲染每个作业的名单网格
     const grid = document.getElementById(`grid-${a.id}`);
     grid.innerHTML = Object.entries(gmap).map(([gi,g]) => `
@@ -311,8 +315,7 @@ async function loadAssignments(subjectCode, date, groups) {
         ${g.map(s => {
           const st = statusMap.get(s.group_index + '-' + s.seat_index) || 'missing';
           const icon = iconFor(st);
-          const clickable = auth && (auth.role==='admin' || auth.role==='teacher');
-          const handler = clickable ? `onclick="cycleStatus(${a.id}, ${s.group_index}, ${s.seat_index})"` : '';
+          const handler = editable ? `onclick="cycleStatus(${a.id}, ${s.group_index}, ${s.seat_index})"` : '';
           return `
             <div class="student">
               <span>${s.name}</span>
@@ -326,14 +329,21 @@ async function loadAssignments(subjectCode, date, groups) {
     // 统计显示
     const statsBox = document.getElementById(`stats-${a.id}`);
     const counts = { ok:0, revise:0, missing:0, leave:0 };
-    rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
     const total = Object.values(gmap).reduce((acc, g) => acc + g.length, 0);
+    Object.values(gmap).forEach(g => {
+      g.forEach(s => {
+        const st = statusMap.get(s.group_index + '-' + s.seat_index) || 'missing';
+        if (counts[st] !== undefined) counts[st]++;
+      });
+    });
+    assignmentRuntime[a.id] = { counts, total };
     statsBox.innerHTML = `
-      <span>总人数：${total}</span>
-      <span>｜ 合格：${counts.ok}</span>
-      <span>｜ 面批：${counts.revise}</span>
-      <span>｜ 未交：${counts.missing}</span>
-      <span>｜ 请假：${counts.leave}</span>
+      ${editable ? `<button onclick="bulkOk(${a.id})">全部上交</button>` : ''}
+      <span>总人数：<span id="cnt-${a.id}-total">${total}</span></span>
+      <span>｜ 合格：<span id="cnt-${a.id}-ok">${counts.ok}</span></span>
+      <span>｜ 面批：<span id="cnt-${a.id}-revise">${counts.revise}</span></span>
+      <span>｜ 未交：<span id="cnt-${a.id}-missing">${counts.missing}</span></span>
+      <span>｜ 请假：<span id="cnt-${a.id}-leave">${counts.leave}</span></span>
     `;
   }
 }
@@ -347,21 +357,71 @@ function nextStatus(curr) {
   const i = order.indexOf(curr);
   return order[(i+1) % order.length];
 }
+function applyStatusToEl(el, status) {
+  if (!el) return;
+  el.dataset.status = status;
+  el.innerHTML = iconFor(status);
+}
+function renderStatsFromRuntime(assignmentId) {
+  const rt = assignmentRuntime[assignmentId];
+  if (!rt || !rt.counts) return;
+  const c = rt.counts;
+  const okEl = document.getElementById(`cnt-${assignmentId}-ok`);
+  const reviseEl = document.getElementById(`cnt-${assignmentId}-revise`);
+  const missingEl = document.getElementById(`cnt-${assignmentId}-missing`);
+  const leaveEl = document.getElementById(`cnt-${assignmentId}-leave`);
+  if (okEl) okEl.innerText = String(c.ok);
+  if (reviseEl) reviseEl.innerText = String(c.revise);
+  if (missingEl) missingEl.innerText = String(c.missing);
+  if (leaveEl) leaveEl.innerText = String(c.leave);
+}
+function updateCountsAndStats(assignmentId, fromStatus, toStatus) {
+  const rt = assignmentRuntime[assignmentId];
+  if (!rt || !rt.counts) return;
+  if (rt.counts[fromStatus] !== undefined) rt.counts[fromStatus] = Math.max(0, rt.counts[fromStatus] - 1);
+  if (rt.counts[toStatus] !== undefined) rt.counts[toStatus] = (rt.counts[toStatus] || 0) + 1;
+  renderStatsFromRuntime(assignmentId);
+}
 async function cycleStatus(assignmentId, groupIndex, seatIndex) {
   if (!(auth && (auth.role==='admin' || auth.role==='teacher'))) return;
   const el = document.getElementById(`st-${assignmentId}-${groupIndex}-${seatIndex}`);
   const curr = (el && el.dataset && el.dataset.status) ? el.dataset.status : 'missing';
   const next = nextStatus(curr);
+  applyStatusToEl(el, next);
+  updateCountsAndStats(assignmentId, curr, next);
   const res = await fetch('/api/statuses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ auth, assignment_id: assignmentId, class_no: getSelectedClass(), group_index: groupIndex, seat_index: seatIndex, status: next })
   });
   const data = await res.json();
-  if (!data.ok) { alert(data.message || '更新失败'); return; }
-  if (el) {
-    el.dataset.status = next;
-    el.innerHTML = iconFor(next);
+  if (!data.ok) {
+    applyStatusToEl(el, curr);
+    updateCountsAndStats(assignmentId, next, curr);
+    alert(data.message || '更新失败');
+    return;
+  }
+}
+
+async function bulkOk(assignmentId) {
+  if (!(auth && (auth.role==='admin' || auth.role==='teacher'))) return;
+  const card = document.getElementById(`a-${assignmentId}`);
+  const rt = assignmentRuntime[assignmentId];
+  const statusEls = card ? Array.from(card.querySelectorAll(`.status[id^="st-${assignmentId}-"]`)) : [];
+  const total = rt?.total ?? statusEls.length;
+  statusEls.forEach(el => applyStatusToEl(el, 'ok'));
+  assignmentRuntime[assignmentId] = { counts: { ok: total, revise: 0, missing: 0, leave: 0 }, total };
+  renderStatsFromRuntime(assignmentId);
+  const res = await fetch('/api/statuses/bulk_ok', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auth, assignment_id: assignmentId, class_no: getSelectedClass() })
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    alert(data.message || '批量更新失败');
+    const datePicker = document.getElementById('datePicker');
+    if (currentSubjectCode && datePicker) loadAssignments(currentSubjectCode, datePicker.value, null);
   }
 }
 
