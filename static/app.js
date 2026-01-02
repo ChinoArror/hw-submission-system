@@ -6,6 +6,7 @@ const logoutBtn = document.getElementById('logoutBtn');
 const backButtonEl = document.getElementById('backBtn');
 let currentSubjectCode = null;
 const assignmentRuntime = {};
+let pendingLoginRole = null;
 
 function getSelectedClass() {
   const cookie = document.cookie.split('; ').find(row => row.startsWith('selected_class='));
@@ -47,7 +48,7 @@ function setupClassSelect() {
 }
 
 loginBtn.addEventListener('click', () => {
-  document.getElementById('loginModal').classList.remove('hidden');
+  openLoginModal();
 });
 statsBtn.addEventListener('click', () => {
   renderStatisticsEntry();
@@ -138,7 +139,7 @@ function route() {
   if (map[p]) {
     const [code, title] = map[p];
     if (code === 'login') {
-      document.getElementById('loginModal').classList.remove('hidden');
+      openLoginModal();
       return;
     }
     renderSubjectPage(code, title);
@@ -147,10 +148,74 @@ function route() {
   }
 }
 
+function openLoginModal() {
+  const modal = document.getElementById('loginModal');
+  const stepRole = document.getElementById('loginStepRole');
+  const stepCred = document.getElementById('loginStepCred');
+  const titleEl = document.getElementById('loginTitle');
+  const nameWrap = document.getElementById('nameWrap');
+  const nameEl = document.getElementById('name');
+  const passEl = document.getElementById('password');
+  const roleEl = document.getElementById('role');
+
+  pendingLoginRole = null;
+  if (roleEl) roleEl.value = '';
+  if (nameEl) nameEl.value = '';
+  if (passEl) passEl.value = '';
+  if (titleEl) titleEl.innerText = '选择身份';
+  if (nameWrap) nameWrap.classList.add('hidden');
+  if (stepCred) stepCred.classList.add('hidden');
+  if (stepRole) stepRole.classList.remove('hidden');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function chooseLoginRole(role) {
+  const stepRole = document.getElementById('loginStepRole');
+  const stepCred = document.getElementById('loginStepCred');
+  const titleEl = document.getElementById('loginTitle');
+  const roleEl = document.getElementById('role');
+  const nameWrap = document.getElementById('nameWrap');
+  const nameEl = document.getElementById('name');
+  const passEl = document.getElementById('password');
+
+  pendingLoginRole = role;
+  if (roleEl) roleEl.value = role;
+  if (nameEl) nameEl.value = '';
+  if (passEl) passEl.value = '';
+  if (titleEl) titleEl.innerText = role === 'teacher' ? '教师登录' : (role === 'admin' ? '管理员登录' : '访客登录');
+  if (nameWrap) {
+    if (role === 'teacher') nameWrap.classList.remove('hidden');
+    else nameWrap.classList.add('hidden');
+  }
+  if (stepRole) stepRole.classList.add('hidden');
+  if (stepCred) stepCred.classList.remove('hidden');
+}
+
+function backToRoleSelect() {
+  const stepRole = document.getElementById('loginStepRole');
+  const stepCred = document.getElementById('loginStepCred');
+  const titleEl = document.getElementById('loginTitle');
+  const roleEl = document.getElementById('role');
+  const nameWrap = document.getElementById('nameWrap');
+  const nameEl = document.getElementById('name');
+  const passEl = document.getElementById('password');
+
+  pendingLoginRole = null;
+  if (roleEl) roleEl.value = '';
+  if (nameEl) nameEl.value = '';
+  if (passEl) passEl.value = '';
+  if (titleEl) titleEl.innerText = '选择身份';
+  if (nameWrap) nameWrap.classList.add('hidden');
+  if (stepCred) stepCred.classList.add('hidden');
+  if (stepRole) stepRole.classList.remove('hidden');
+}
+
 async function login() {
-  const role = document.getElementById('role').value;
-  const name = document.getElementById('name').value;
+  const role = pendingLoginRole || document.getElementById('role').value;
+  const name = role === 'teacher' ? document.getElementById('name').value : '';
   const password = document.getElementById('password').value;
+  if (!role) { alert('请选择身份'); return; }
+  if (role === 'teacher' && !name.trim()) { alert('请输入教师姓名'); return; }
 
   try {
     const res = await fetch('/api/login', {
@@ -175,6 +240,7 @@ async function login() {
     document.cookie = `auth=${encodeURIComponent(JSON.stringify(auth))}; Max-Age=${7*24*3600}; path=/`;
 
     document.getElementById('loginModal').classList.add('hidden');
+    backToRoleSelect();
     applyHeaderByRole();
     renderHome();
 
@@ -291,6 +357,38 @@ async function loadAssignments(subjectCode, date, groups) {
   wrap.innerHTML = items.map(a => `<div class="card" id="a-${a.id}"><h3>${a.title}</h3><div class="roster" id="grid-${a.id}"></div><div class="controls" id="stats-${a.id}"></div></div>`).join('');
 
   for (const a of items) {
+    const grid = document.getElementById(`grid-${a.id}`);
+    const statsBox = document.getElementById(`stats-${a.id}`);
+    const editable = auth && (auth.role==='admin' || auth.role==='teacher');
+
+    if (!auth) {
+      const statusRes = await fetch(`/api/statuses?assignment_id=${a.id}&class_no=${encodeURIComponent(classNo)}`);
+      const statusData = await statusRes.json();
+      const rows = statusData.data || [];
+      const counts = { ok:0, revise:0, missing:0, leave:0 };
+      rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+      const total = rows.length;
+      assignmentRuntime[a.id] = { counts, total };
+      if (grid) {
+        grid.innerHTML = `
+          <div class="group">
+            <div class="group-title">提示</div>
+            <div class="student"><span>登录后可查看学生名单与详情</span></div>
+          </div>
+        `;
+      }
+      if (statsBox) {
+        statsBox.innerHTML = `
+          <span>总人数：<span id="cnt-${a.id}-total">${total}</span></span>
+          <span>｜ 合格：<span id="cnt-${a.id}-ok">${counts.ok}</span></span>
+          <span>｜ 面批：<span id="cnt-${a.id}-revise">${counts.revise}</span></span>
+          <span>｜ 未交：<span id="cnt-${a.id}-missing">${counts.missing}</span></span>
+          <span>｜ 请假：<span id="cnt-${a.id}-leave">${counts.leave}</span></span>
+        `;
+      }
+      continue;
+    }
+
     const statusRes = await fetch(`/api/statuses?assignment_id=${a.id}&class_no=${encodeURIComponent(classNo)}`);
     const statusData = await statusRes.json();
     const rows = statusData.data || [];
@@ -306,9 +404,7 @@ async function loadAssignments(subjectCode, date, groups) {
         gmap[s.group_index].push(s);
       });
     }
-    const editable = auth && (auth.role==='admin' || auth.role==='teacher');
     // 渲染每个作业的名单网格
-    const grid = document.getElementById(`grid-${a.id}`);
     grid.innerHTML = Object.entries(gmap).map(([gi,g]) => `
       <div class="group">
         <div class="group-title">第 ${gi} 组</div>
@@ -327,7 +423,6 @@ async function loadAssignments(subjectCode, date, groups) {
     `).join('');
 
     // 统计显示
-    const statsBox = document.getElementById(`stats-${a.id}`);
     const counts = { ok:0, revise:0, missing:0, leave:0 };
     const total = Object.values(gmap).reduce((acc, g) => acc + g.length, 0);
     Object.values(gmap).forEach(g => {

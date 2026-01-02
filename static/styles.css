@@ -95,5 +95,7 @@ main#app {
 .modal.hidden { display: none; }
 .modal-content { background: var(--palette-background-secondary); border: 1px solid var(--palette-border-primary); border-radius: var(--geometry-borderRadius-large); padding: 16px; width: min(480px, 92vw); }
 .modal-content input, .modal-content select { width: 100%; padding: 8px; border: 1px solid var(--palette-border-primary); border-radius: var(--geometry-borderRadius-medium); margin: 6px 0; }
+.login-step { display: flex; flex-direction: column; gap: 10px; }
+.login-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
 .hidden { display: none; }

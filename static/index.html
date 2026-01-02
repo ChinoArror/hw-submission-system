@@ -27,15 +27,23 @@
 <!-- 登录弹窗 -->
 <div id="loginModal" class="modal hidden">
   <div class="modal-content">
-    <h3>身份登录</h3>
-    <select id="role">
-      <option value="guest">访客</option>
-      <option value="teacher">教师</option>
-      <option value="admin">管理员</option>
-    </select>
-    <input id="name" placeholder="教师姓名（仅教师）"/>
-    <input id="password" type="password" placeholder="密码"/>
-    <button onclick="login()">确认登录</button>
+    <h3 id="loginTitle">选择身份</h3>
+    <input id="role" type="hidden" value=""/>
+    <div id="loginStepRole" class="login-step">
+      <button class="primary" onclick="chooseLoginRole('guest')">访客</button>
+      <button class="primary" onclick="chooseLoginRole('teacher')">教师</button>
+      <button class="primary" onclick="chooseLoginRole('admin')">管理员</button>
+    </div>
+    <div id="loginStepCred" class="login-step hidden">
+      <div id="nameWrap" class="hidden">
+        <input id="name" placeholder="教师姓名"/>
+      </div>
+      <input id="password" type="password" placeholder="密码"/>
+      <div class="login-actions">
+        <button onclick="backToRoleSelect()">返回</button>
+        <button class="primary" onclick="login()">登录</button>
+      </div>
+    </div>
   </div>
 </div>
 
