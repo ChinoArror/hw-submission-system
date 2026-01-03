@@ -7,6 +7,7 @@ const backButtonEl = document.getElementById('backBtn');
 let currentSubjectCode = null;
 const assignmentRuntime = {};
 let pendingLoginRole = null;
+let cachedClasses = null;
 
 function getSelectedClass() {
   const cookie = document.cookie.split('; ').find(row => row.startsWith('selected_class='));
@@ -16,35 +17,72 @@ function setSelectedClass(classId) {
   document.cookie = `selected_class=${encodeURIComponent(classId)}; Max-Age=${7*24*3600}; path=/`;
 }
 function setupClassSelect() {
-  const sel = document.getElementById('classSelect');
-  if (!sel) return;
+  const iconEl = document.getElementById('classSelectIcon');
+  const menuEl = document.getElementById('classMenu');
+  if (iconEl) iconEl.innerText = getSelectedClass();
+  if (!menuEl) return;
+
+  if (menuEl.dataset.bound !== '1') {
+    menuEl.dataset.bound = '1';
+    document.addEventListener('click', (e) => {
+      const btn = document.getElementById('classSelectBtn');
+      const menu = document.getElementById('classMenu');
+      if (!menu || menu.classList.contains('hidden')) return;
+      if (btn && (btn === e.target || btn.contains(e.target))) return;
+      if (menu === e.target || menu.contains(e.target)) return;
+      menu.classList.add('hidden');
+    });
+  }
+
   fetch('/api/classes').then(r => r.json()).then(data => {
-    const classes = (data && data.data) || ['01'];
-    sel.innerHTML = classes.map(c => `<option value="${c}">${c}</option>`).join('');
-    const curr = getSelectedClass();
-    sel.value = curr;
+    cachedClasses = (data && data.data) || ['01'];
+    renderClassMenu();
+    if (iconEl) iconEl.innerText = getSelectedClass();
   }).catch(() => {
-    const curr = getSelectedClass();
-    sel.value = curr;
+    cachedClasses ||= ['01'];
+    renderClassMenu();
+    if (iconEl) iconEl.innerText = getSelectedClass();
   });
-  sel.onchange = () => {
-    setSelectedClass(sel.value);
-    const p = location.pathname;
-    const map = {
-      '/chinese': ['chinese','语文'],
-      '/math': ['math','数学'],
-      '/english': ['english','英语'],
-      '/physics': ['physics','物理'],
-      '/chemistry': ['chemistry','化学'],
-      '/biology': ['biology','生物']
-    };
-    if (map[p]) {
-      const [code, title] = map[p];
-      renderSubjectPage(code, title);
-    } else {
-      renderHome();
-    }
+}
+
+function renderClassMenu() {
+  const menuEl = document.getElementById('classMenu');
+  if (!menuEl) return;
+  const classes = cachedClasses || ['01'];
+  menuEl.innerHTML = classes.map(c => `
+    <button class="dock-item dock-item--action" style="--dock-scale:1" onclick="selectClass('${c}')">
+      <div class="dock-icon">${c}</div>
+    </button>
+  `).join('');
+}
+
+function toggleClassMenu() {
+  const menuEl = document.getElementById('classMenu');
+  if (!menuEl) return;
+  menuEl.classList.toggle('hidden');
+}
+
+function selectClass(classNo) {
+  setSelectedClass(classNo);
+  const iconEl = document.getElementById('classSelectIcon');
+  if (iconEl) iconEl.innerText = classNo;
+  const menuEl = document.getElementById('classMenu');
+  if (menuEl) menuEl.classList.add('hidden');
+  const p = location.pathname;
+  const map = {
+    '/chinese': ['chinese','语文'],
+    '/math': ['math','数学'],
+    '/english': ['english','英语'],
+    '/physics': ['physics','物理'],
+    '/chemistry': ['chemistry','化学'],
+    '/biology': ['biology','生物']
   };
+  if (map[p]) {
+    const [code, title] = map[p];
+    renderSubjectPage(code, title);
+  } else {
+    renderHome();
+  }
 }
 
 loginBtn.addEventListener('click', () => {
@@ -53,6 +91,11 @@ loginBtn.addEventListener('click', () => {
 statsBtn.addEventListener('click', () => {
   renderStatisticsEntry();
 });
+if (backButtonEl) {
+  backButtonEl.addEventListener('click', () => {
+    navigateTo('/');
+  });
+}
 if (logoutBtn) {
   logoutBtn.addEventListener('click', () => {
     localStorage.removeItem('auth');

@@ -40,6 +40,7 @@ header {
 }
 header h1 { font-size: 1.25rem; margin: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
+.header-dock { display: inline-flex; gap: 10px; align-items: flex-end; position: relative; }
 .header-actions .action-item {
   height: 40px;
   min-width: 40px;
@@ -74,6 +75,30 @@ select.action-item {
 button.action-item {
   background: var(--palette-background-secondary);
 }
+
+.dock-item--action:hover { --dock-scale: 1.18; }
+
+.dock-label-bottom {
+  top: auto;
+  bottom: -1.9rem;
+}
+
+.dock-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 12px;
+  background: var(--palette-background-secondary);
+  border: 1px solid var(--palette-border-primary);
+  padding: 10px;
+  box-shadow: 0 16px 30px -18px rgba(17, 24, 39, 0.25);
+  z-index: 20;
+}
+.dock-menu .dock-item { width: auto; padding: 0 12px; }
+.dock-menu .dock-icon { font-size: 13px; }
 
 .dock-outer {
   margin: 0 0.5rem;
@@ -135,7 +160,8 @@ button.action-item {
 
 .dock-label {
   position: absolute;
-  top: -1.75rem;
+  top: auto;
+  bottom: -1.9rem;
   left: 50%;
   width: fit-content;
   white-space: pre;

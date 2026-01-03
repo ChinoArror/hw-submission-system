@@ -13,14 +13,30 @@
     <nav class="dock-panel" id="subjectNav"></nav>
   </div>
   <div class="header-actions">
-    <select id="classSelect" class="action-item">
-      <option value="01">01</option>
-      <option value="02">02</option>
-    </select>
-    <button id="backBtn" class="action-item hidden">返回</button>
-    <button id="statsBtn" class="action-item hidden">统计</button>
-    <button id="logoutBtn" class="action-item hidden">退出</button>
-    <button id="loginBtn" class="action-item">登录</button>
+    <div class="header-dock">
+      <button id="classSelectBtn" class="dock-item dock-item--action" style="--dock-scale:1" onclick="toggleClassMenu()">
+        <div class="dock-label dock-label-bottom">班级</div>
+        <div class="dock-icon" id="classSelectIcon">01</div>
+      </button>
+      <div id="classMenu" class="dock-menu hidden"></div>
+
+      <button id="backBtn" class="dock-item dock-item--action hidden" style="--dock-scale:1">
+        <div class="dock-label dock-label-bottom">返回</div>
+        <div class="dock-icon">←</div>
+      </button>
+      <button id="statsBtn" class="dock-item dock-item--action hidden" style="--dock-scale:1">
+        <div class="dock-label dock-label-bottom">统计</div>
+        <div class="dock-icon">📊</div>
+      </button>
+      <button id="logoutBtn" class="dock-item dock-item--action hidden" style="--dock-scale:1">
+        <div class="dock-label dock-label-bottom">退出</div>
+        <div class="dock-icon">🚪</div>
+      </button>
+      <button id="loginBtn" class="dock-item dock-item--action" style="--dock-scale:1">
+        <div class="dock-label dock-label-bottom">登录</div>
+        <div class="dock-icon">🔑</div>
+      </button>
+    </div>
   </div>
 </header>
 
