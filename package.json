@@ -11,6 +11,8 @@
   },
   "devDependencies": {
     "wrangler": "^3.20.0"
+  },
+  "dependencies": {
+    "motion": "^12.23.26"
   }
 }
-

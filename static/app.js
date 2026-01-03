@@ -83,7 +83,38 @@ async function populateHeaderNav() {
   const nav = document.getElementById('subjectNav');
   const res = await fetch('/api/subjects');
   const data = await res.json();
-  nav.innerHTML = data.data.map(s => `<a href="/${s.code}" onclick="event.preventDefault();navigateToSubject('${s.code}','${s.title}')">${s.title}</a>`).join('');
+  nav.innerHTML = data.data.map(s => `
+    <button class="dock-item" onclick="navigateToSubject('${s.code}','${s.title}')" style="--dock-scale:1">
+      <div class="dock-label">${s.title}</div>
+      <div class="dock-icon">${s.title.slice(0,1)}</div>
+    </button>
+  `).join('');
+  setupDockMotion(nav);
+}
+
+function setupDockMotion(navEl) {
+  if (!navEl || navEl.dataset.dockReady === '1') return;
+  navEl.dataset.dockReady = '1';
+  const items = () => Array.from(navEl.querySelectorAll('.dock-item'));
+  let raf = 0;
+  function apply(clientX) {
+    const els = items();
+    for (const el of els) {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const dx = Math.abs(clientX - cx);
+      const t = Math.max(0, 1 - dx / 160);
+      const scale = 1 + t * 0.6;
+      el.style.setProperty('--dock-scale', scale.toFixed(3));
+    }
+  }
+  navEl.addEventListener('mousemove', (e) => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => apply(e.clientX));
+  });
+  navEl.addEventListener('mouseleave', () => {
+    for (const el of items()) el.style.setProperty('--dock-scale', '1');
+  });
 }
 
 async function ensureRosterLoaded() {
